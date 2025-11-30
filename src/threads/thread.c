@@ -340,10 +340,15 @@ void
 thread_set_priority (int new_priority) 
 {
   struct thread *current = thread_current ();
-
-  thread_current ()->priority = new_priority;
+  current->original_priority = new_priority;
 
   thread_update_priority(current);
+
+  if (!list_empty(&ready_list) && 
+      current->priority < list_entry(list_front(&ready_list), struct thread, elem)->priority)
+    {
+      thread_yield();
+    }
 }
 
 /** Returns the current thread's priority. */
