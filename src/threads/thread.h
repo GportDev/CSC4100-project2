@@ -103,6 +103,12 @@ struct thread
     int64_t wakeup_tick;                /**< Tick when thread should wake up. */
     struct semaphore sleep_sema;        /**< Semaphore for sleeping (value: 0 = blocked). */
 
+   /* Priority donation fields - Added for Phase 2B*/
+   int original_priority;              /**< Original priority before donation. */
+   struct list donations;              /**< List of threads that donated priority. */
+   struct list_elem donation_elem;    /**< List element for donation list. */
+   struct lock *waiting_lock;          /**< Lock the thread is waiting on. */
+
     /* Owned by thread.c. */
     unsigned magic;                     /**< Detects stack overflow. */
   };
@@ -142,5 +148,13 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+/* Priority donation functions */
+void thread_donate_priority (struct thread *t, int new_priority);
+void thread_update_priority (struct thread *t);
+void remove_donors_for_lock (struct thread *t, struct lock *lock);
+bool thread_priority_compare (const struct list_elem *a,
+                              const struct list_elem *b,
+                              void *aux);
 
 #endif /**< threads/thread.h */

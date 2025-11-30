@@ -335,7 +335,11 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
+  struct thread *current = thread_current ();
+
   thread_current ()->priority = new_priority;
+
+  thread_update_priority(current);
 }
 
 /** Returns the current thread's priority. */
@@ -468,6 +472,12 @@ init_thread (struct thread *t, const char *name, int priority)
   t->wakeup_tick = 0;
   sema_init (&t->sleep_sema, 0);
 
+  /* Initialize fields for priority donatiosn */
+  t->priority = priority;
+  t->original_priority = priority;
+  list_init(&t->donations);
+  t->waiting_lock = NULL;
+
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
@@ -586,3 +596,66 @@ allocate_tid (void)
 /** Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+
+/* Helper function to donate priority for a thread */
+void thread_donate_priority(struct thread *t, int new_priority) {
+  /* Update thread's priority if donation is higher*/
+  if (new_priority > t->priority) {
+    t->priority = new_priority;
+
+    if (t->status == THREAD_READY) {
+      list_sort(&ready_list, thread_priority_compare, NULL);
+    }
+  }
+}
+
+
+/* Added function to update priority after a donation */
+void thread_update_priority(struct thread *t) {
+  int max_priority = t->original_priority;
+
+  /* Check all donations in thread list */
+  struct list_elem *e;
+  for (e = list_begin(&t->donations); e != list_end(&t->donations); e = list_next(e)) {
+    struct thread *donor = list_entry(e, struct thread, donation_elem);
+    if (donor->priority > max_priority) {
+      max_priority = donor->priority;
+    }
+  }
+
+  /* sets the threads priority to the maximum found priority from donations*/
+  t->priority = max_priority;
+
+  if (t == thread_current() && !list_empty(&ready_list)) {
+    struct thread *highest = list_entry(list_front(&ready_list), struct thread, elem);
+    if (highest->priority > t->priority) {
+      thread_yield();
+    }
+  }
+}
+
+
+/* remove donrs for a specific lock */
+void remove_donors_for_lock(struct thread *t, struct lock *lock) {
+  struct list_elem *e = list_begin(&t->donations);
+
+  while (e != list_end(&t->donations)) {
+    struct thread *donor = list_entry(e, struct thread, donation_elem);
+    struct list_elem *next = list_next(e);
+
+    /* Remove donor if waiting on lock */
+    if (donor->waiting_lock == lock) {
+      list_remove(e);
+    }
+    e = next;
+  }
+}
+
+
+bool thread_priority_compare (const struct list_elem *a, const struct list_elem *b, void *aux) {
+  struct thread *thread_a = list_entry(a, struct thread, elem);
+  struct thread *thread_b = list_entry(b, struct thread, elem);
+
+  return thread_a->priority > thread_b->priority;
+}

@@ -196,8 +196,47 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  /* Priority donation */
+  struct thread *current = thread_current ();
+  struct thread *holder = lock->holder;
+
+  if (holder != NULL) {
+    /* Locks the current thread to acquire the lock */
+    current->waiting_lock = lock;
+
+    /* Add current thread to the list of donation threads */
+    list_push_back(&holder->donations, &current->donation_elem);
+
+    struct thread *t = holder;
+    int depth = 0;
+    int donate_priority = current->priority;
+
+    while (t != NULL && depth < 8) {
+      if (donate_priority > t->priority) {
+        thread_donate_priority(t, donate_priority);
+      }
+
+      if (t->waiting_lock != NULL) {
+        t = t->waiting_lock->holder;
+        depth++;
+      }
+      else {
+        break;
+      }
+      depth++;
+    }
+
+    /* Update the priority of the holder if needed */
+    if (current->priority > holder->priority) {
+      thread_donate_priority(holder, current->priority);
+    }
+  }
+
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
+
+  /* Set the waiting_lock to NULL after acquiring the lock */
+  current->waiting_lock = NULL;
 }
 
 /** Tries to acquires LOCK and returns true if successful or false
@@ -230,6 +269,14 @@ lock_release (struct lock *lock)
 {
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
+
+  struct thread *current = thread_current ();
+
+  /* Remove current thread from the list of donation threads */
+  remove_donor_for_lock(current, lock);
+
+  /* Update the thread's priority after removing the donor */
+  thread_update_priority(current);
 
   lock->holder = NULL;
   sema_up (&lock->semaphore);
