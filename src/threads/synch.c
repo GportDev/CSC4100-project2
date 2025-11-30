@@ -273,7 +273,7 @@ lock_release (struct lock *lock)
   struct thread *current = thread_current ();
 
   /* Remove current thread from the list of donation threads */
-  remove_donor_for_lock(current, lock);
+  remove_donors_for_lock(current, lock);
 
   /* Update the thread's priority after removing the donor */
   thread_update_priority(current);
