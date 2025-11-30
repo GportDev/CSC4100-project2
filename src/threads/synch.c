@@ -268,24 +268,16 @@ lock_release (struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   struct thread *current = thread_current ();
-
-  /* Remove current thread from the list of donation threads */
+  
+  /* Remove donors waiting on this lock */
+  remove_donors_for_lock (current, lock);
+  
+  /* Recalculate priority */
+  thread_update_priority (current);
+  
+  /* Release the lock */
   lock->holder = NULL;
-
-  enum intr_level old_level = intr_disable ();
-  if (!list_empty (&lock->waiters)) 
-    {
-      /* Pop the highest-priority thread and unblock it */
-      struct list_elem *e = list_pop_front (&lock->waiters);
-      struct thread *t = list_entry (e, struct thread, elem);
-      thread_unblock (t);
-    }
-  else
-    {
-      /* If no one is waiting, "up" the semaphore so the next acquire succeeds. */
-      sema_up (&lock->semaphore);
-    }
-  intr_set_level (old_level);
+  sema_up (&lock->semaphore);
 }
 
 /** Returns true if the current thread holds LOCK, false
