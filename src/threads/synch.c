@@ -189,36 +189,34 @@ lock_init (struct lock *lock)
    interrupt handler.  This function may be called with
    interrupts disabled, but interrupts will be turned back on if
    we need to sleep. */
-void
-lock_acquire (struct lock *lock)
+void lock_acquire (struct lock *lock)
 {
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  /* Priority donation */
   struct thread *current = thread_current ();
-  struct thread *holder = lock->holder;
 
-  if (holder != NULL) {
-    /* Locks the current thread to acquire the lock */
+  /* --- This part is mostly correct --- */
+  if (lock->holder != NULL) {
     current->waiting_lock = lock;
+    list_push_back(&lock->holder->donations, &current->donation_elem); // This is one way to track donors
 
-    /* Add current thread to the list of donation threads */
-    list_push_back(&holder->donations, &current->donation_elem);
-
-    if (current->priority > holder->priority)
-        {
-          thread_donate_priority (holder, current->priority);
-        }
+    if (current->priority > lock->holder->priority) {
+      thread_donate_priority (lock->holder, current->priority); // Assumes this function recursively donates
     }
 
-  sema_down (&lock->semaphore);
-    
-  /* After acquiring the lock */
-  lock->holder = thread_current ();
-  current->waiting_lock = NULL;
+    enum intr_level old_level = intr_disable ();
+    // Add to the LOCK'S priority-sorted wait list, not the semaphore's
+    list_insert_ordered (&lock->waiters, &current->elem, thread_priority_compare, NULL); 
+    thread_block (); // Manually block the thread
+    intr_set_level (old_level);
   }
+
+  /* Thread is now awake and has acquired the lock */
+  lock->holder = current;
+  current->waiting_lock = NULL; 
+}
 
 
 /** Tries to acquires LOCK and returns true if successful or false
