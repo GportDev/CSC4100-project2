@@ -207,37 +207,19 @@ lock_acquire (struct lock *lock)
     /* Add current thread to the list of donation threads */
     list_push_back(&holder->donations, &current->donation_elem);
 
-    struct thread *t = holder;
-    int depth = 0;
-    int donate_priority = current->priority;
-
-    while (t != NULL && depth < 8) {
-      if (donate_priority > t->priority) {
-        thread_donate_priority(t, donate_priority);
-      }
-
-      if (t->waiting_lock != NULL) {
-        t = t->waiting_lock->holder;
-        depth++;
-      }
-      else {
-        break;
-      }
-      depth++;
+    if (current->priority > holder->priority)
+        {
+          thread_donate_priority (holder, current->priority);
+        }
     }
-
-    /* Update the priority of the holder if needed */
-    if (current->priority > holder->priority) {
-      thread_donate_priority(holder, current->priority);
-    }
-  }
 
   sema_down (&lock->semaphore);
+    
+  /* After acquiring the lock */
   lock->holder = thread_current ();
-
-  /* Set the waiting_lock to NULL after acquiring the lock */
   current->waiting_lock = NULL;
-}
+  }
+
 
 /** Tries to acquires LOCK and returns true if successful or false
    on failure.  The lock must not already be held by the current

@@ -604,44 +604,45 @@ uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
 /* Helper function to donate priority for a thread */
 void thread_donate_priority(struct thread *t, int new_priority) {
+  ASSERT (t != NULL);
+
   /* Update thread's priority if donation is higher*/
   if (new_priority > t->priority) {
     t->priority = new_priority;
-
-    if (t->status == THREAD_READY) {
-      list_sort(&ready_list, thread_priority_compare, NULL);
-    }
   }
 }
 
 
 /* Added function to update priority after a donation */
 void thread_update_priority(struct thread *t) {
+
+  ASSERT (t != NULL);
+
   int max_priority = t->original_priority;
 
   /* Check all donations in thread list */
-  struct list_elem *e;
-  for (e = list_begin(&t->donations); e != list_end(&t->donations); e = list_next(e)) {
-    struct thread *donor = list_entry(e, struct thread, donation_elem);
-    if (donor->priority > max_priority) {
-      max_priority = donor->priority;
+  if (!list_empty (&t->donations)) {
+      struct list_elem *e;
+      for (e = list_begin (&t->donations); e != list_end (&t->donations);
+           e = list_next (e))
+        {
+          struct thread *donor = list_entry (e, struct thread, donation_elem);
+          if (donor->priority > max_priority)
+            max_priority = donor->priority;
+        }
     }
-  }
 
   /* sets the threads priority to the maximum found priority from donations*/
   t->priority = max_priority;
-
-  if (t == thread_current() && !list_empty(&ready_list)) {
-    struct thread *highest = list_entry(list_front(&ready_list), struct thread, elem);
-    if (highest->priority > t->priority) {
-      thread_yield();
-    }
-  }
 }
 
 
 /* remove donrs for a specific lock */
 void remove_donors_for_lock(struct thread *t, struct lock *lock) {
+
+  ASSERT (t != NULL);
+  ASSERT (lock != NULL);
+
   struct list_elem *e = list_begin(&t->donations);
 
   while (e != list_end(&t->donations)) {
