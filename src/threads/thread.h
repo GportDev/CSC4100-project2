@@ -101,7 +101,6 @@ struct thread
 
     /* Alarm clock fields - Added for Phase 1 */
     int64_t wakeup_tick;                /**< Tick when thread should wake up. */
-    struct semaphore sleep_sema;        /**< Semaphore for sleeping (value: 0 = blocked). */
 
     /* Owned by thread.c. */
     unsigned magic;                     /**< Detects stack overflow. */

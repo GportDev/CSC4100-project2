@@ -466,7 +466,6 @@ init_thread (struct thread *t, const char *name, int priority)
   
   /* Initialize alarm clock fields */
   t->wakeup_tick = 0;
-  sema_init (&t->sleep_sema, 0);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

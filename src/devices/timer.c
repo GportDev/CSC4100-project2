@@ -27,6 +27,11 @@ static unsigned loops_per_tick;
 /** List of threads currently sleeping (sorted by wakeup_tick). */
 static struct list sleeping_list;
 
+/** Earliest tick when any thread should wake up.
+   Used to optimize timer_interrupt() by skipping list scan when no threads
+   are ready to wake. Set to INT64_MAX when sleeping_list is empty. */
+static int64_t next_wakeup_tick;
+
 static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
@@ -45,6 +50,7 @@ timer_init (void)
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
   list_init (&sleeping_list);
+  next_wakeup_tick = INT64_MAX;
 }
 
 /** Calibrates loops_per_tick, used to implement brief delays. */
@@ -103,21 +109,31 @@ timer_sleep (int64_t ticks)
       return;
     }
   
-  /* Verify interrupts are enabled (required for semaphores) */
+  /* Verify interrupts are enabled as required */
   ASSERT (intr_get_level () == INTR_ON);
   
   /* Calculate wakeup time */
   struct thread *current = thread_current ();
-  current->wakeup_tick = timer_ticks () + ticks;
+  int64_t wakeup_tick = timer_ticks () + ticks;
+  current->wakeup_tick = wakeup_tick;
   
-  /* Add to sleeping list (CRITICAL SECTION - timer interrupt also accesses it) */
+  /* CRITICAL SECTION: Must be atomic with blocking to prevent race conditions
+     Disable interrupts before modifying shared data structures */
   enum intr_level old_level = intr_disable ();
+  
+  /* Add thread to sleeping list (sorted by wakeup time) */
   list_insert_ordered (&sleeping_list, &current->elem, 
                        wakeup_time_less, NULL);
-  intr_set_level (old_level);
   
-  /* Block thread until wakeup time (no busy-waiting!) */
-  sema_down (&current->sleep_sema);
+  /* Update global optimization variable if this thread wakes sooner */
+  if (wakeup_tick < next_wakeup_tick)
+    next_wakeup_tick = wakeup_tick;
+  
+  // Block the thread - changes status to BLOCKED and calls schedule()
+  thread_block ();
+  
+  /* Re-enable interrupts after waking up */
+  intr_set_level (old_level);
 }
 
 /** Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -197,8 +213,10 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
   
-  /* Wake up sleeping threads whose time has come */
-  check_sleeping_threads ();
+  /* Optimization: Only check sleeping threads if at least one is ready.
+     This avoids scanning the list on every tick when no threads need waking. */
+  if (ticks >= next_wakeup_tick)
+    check_sleeping_threads ();
 }
 
 /** Returns true if LOOPS iterations waits for more than one timer
@@ -285,13 +303,15 @@ wakeup_time_less (const struct list_elem *a,
 }
 
 /** Checks sleeping threads and wakes any whose wakeup time has arrived.
-   Called from timer interrupt, so we're already in interrupt context. */
+   Called from timer interrupt, so we're already in interrupt context.
+   Interrupts are already disabled in interrupt context. */
 static void
 check_sleeping_threads (void)
 {
-  int64_t current_tick = timer_ticks ();
+  int64_t current_tick = ticks;
   
-  /* Check threads from front of list until we find one that's not ready */
+  /* Wake all threads whose wakeup time has passed.
+     List is sorted by wakeup_tick, so we can stop at first thread not ready. */
   while (!list_empty (&sleeping_list))
     {
       struct list_elem *e = list_front (&sleeping_list);
@@ -299,14 +319,23 @@ check_sleeping_threads (void)
       
       if (t->wakeup_tick <= current_tick)
         {
-          /* Time to wake up! */
+          // Time to wake up! 
           list_pop_front (&sleeping_list);
-          sema_up (&t->sleep_sema);
+          thread_unblock (t);
         }
       else
         {
-          /* This thread (and all after it) aren't ready yet */
+          /* This thread (and all after it) aren't ready yet.
+             Since list is sorted, we can stop here. */
           break;
         }
+    }
+  if (list_empty (&sleeping_list))
+    next_wakeup_tick = INT64_MAX;
+  else
+    {
+      struct list_elem *e = list_front (&sleeping_list);
+      struct thread *t = list_entry (e, struct thread, elem);
+      next_wakeup_tick = t->wakeup_tick;
     }
 }
