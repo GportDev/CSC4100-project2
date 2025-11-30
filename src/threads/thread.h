@@ -94,7 +94,13 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /**< List element. */
 
-#ifdef USERPROG
+    /* Priority donation fields - Added for Phase 2B*/
+    int original_priority;              /**< Original priority before donation. */
+    struct list donations;              /**< List of threads that donated priority. */
+    struct list_elem donation_elem;    /**< List element for donation list. */
+    struct lock *waiting_lock;          /**< Lock the thread is waiting on. */
+
+    #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /**< Page directory. */
 #endif
@@ -102,12 +108,6 @@ struct thread
     /* Alarm clock fields - Added for Phase 1 */
     int64_t wakeup_tick;                /**< Tick when thread should wake up. */
     struct semaphore sleep_sema;        /**< Semaphore for sleeping (value: 0 = blocked). */
-
-   /* Priority donation fields - Added for Phase 2B*/
-   int original_priority;              /**< Original priority before donation. */
-   struct list donations;              /**< List of threads that donated priority. */
-   struct list_elem donation_elem;    /**< List element for donation list. */
-   struct lock *waiting_lock;          /**< Lock the thread is waiting on. */
 
     /* Owned by thread.c. */
     unsigned magic;                     /**< Detects stack overflow. */
