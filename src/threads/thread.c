@@ -20,6 +20,15 @@
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
 
+/* Comparator: return true if A has higher priority than B */
+bool 
+thread_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+ const struct thread *ta = list_entry(a, struct thread, elem);
+ const struct thread *tb = list_entry(b, struct thread, elem);
+ return ta->priority > tb->priority;
+}
+
 /** List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
@@ -232,8 +241,9 @@ thread_block (void)
    be important: if the caller had disabled interrupts itself,
    it may expect that it can atomically unblock a thread and
    update other data. */
+
 void
-thread_unblock (struct thread *t) 
+thread_unblock (struct thread *t)
 {
   enum intr_level old_level;
 
@@ -241,9 +251,14 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+
+  /* Insert into ready_list ordered by priority */
+  list_insert_ordered(&ready_list, &t->elem,
+                      thread_priority_compare, NULL);
+
   t->status = THREAD_READY;
-  intr_set_level (old_level);
+
+  intr_set_level(old_level);
 }
 
 /** Returns the name of the running thread. */
@@ -302,17 +317,21 @@ thread_exit (void)
 
 /** Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
+ 
 void
-thread_yield (void) 
+thread_yield (void)
 {
   struct thread *cur = thread_current ();
   enum intr_level old_level;
-  
+
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+
+  if (cur != idle_thread)
+    list_insert_ordered(&ready_list, &cur->elem,
+                        thread_priority_compare, NULL);
+
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -320,6 +339,7 @@ thread_yield (void)
 
 /** Invoke function 'func' on all threads, passing along 'aux'.
    This function must be called with interrupts off. */
+
 void
 thread_foreach (thread_action_func *func, void *aux)
 {
@@ -339,13 +359,21 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  struct thread *current = thread_current ();
+    struct thread *current = thread_current ();
+    current->original_priority = new_priority;
 
-  current->original_priority = new_priority;
+    /* Recalculate effective priority considering donations */
+    thread_update_priority(current);
 
-  thread_update_priority(current);
+    /* Yield only if we are no longer the highest priority thread */
+    if (!list_empty(&ready_list)) {
+        struct thread *top =
+            list_entry(list_front(&ready_list), struct thread, elem);
 
-  thread_yield();
+        if (top->priority > current->priority) {
+            thread_yield();
+        }
+    }
 }
 
 /** Returns the current thread's priority. */
@@ -512,8 +540,8 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  
+  return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 
 /** Completes a thread switch by activating the new thread's page
