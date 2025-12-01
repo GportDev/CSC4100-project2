@@ -112,19 +112,12 @@ sema_up (struct semaphore *sema)
 
   ASSERT (sema != NULL);
 
-  if (!list_empty (&sema->waiters)) {
-    /* Sort waiters by priority */
-    list_sort(&sema->waiters, thread_priority_compare, NULL);
-
+  old_level = intr_disable ();
+  if (!list_empty (&sema->waiters)) 
     thread_unblock (list_entry (list_pop_front (&sema->waiters),
                                 struct thread, elem));
-  }
-
   sema->value++;
-
-  thread_yield(); 
-
-  intr_set_level(old_level);
+  intr_set_level (old_level);
 }
 
 static void sema_test_helper (void *sema_);
@@ -196,51 +189,36 @@ lock_init (struct lock *lock)
    interrupt handler.  This function may be called with
    interrupts disabled, but interrupts will be turned back on if
    we need to sleep. */
-void lock_acquire (struct lock *lock)
+void
+lock_acquire (struct lock *lock)
 {
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  /* Priority donation */
   struct thread *current = thread_current ();
   struct thread *holder = lock->holder;
 
   if (holder != NULL) {
+    /* Locks the current thread to acquire the lock */
     current->waiting_lock = lock;
-    list_push_back(&holder->donations, &current->donation_elem); // This is one way to track donors
 
-      /* Donate priority through chain (nested donation) */
-      struct thread *t = holder;
-      int donate_priority = current->priority;
-      int depth = 0;
-      
-      while (t != NULL && depth < 8)
+    /* Add current thread to the list of donation threads */
+    list_push_back(&holder->donations, &current->donation_elem);
+
+    if (current->priority > holder->priority)
         {
-          /* Donate if our priority is higher */
-          if (donate_priority > t->priority)
-            {
-              t->priority = donate_priority;
-            }
-          
-          /* Follow the chain if t is also waiting on a lock */
-          if (t->waiting_lock != NULL && t->waiting_lock->holder != NULL)
-            {
-              t = t->waiting_lock->holder;
-              depth++;
-            }
-          else
-            {
-              break;
-            }
+          thread_donate_priority (holder, current->priority);
         }
     }
 
   sema_down (&lock->semaphore);
-  
-  /* After acquiring */
+    
+  /* After acquiring the lock */
   lock->holder = thread_current ();
   current->waiting_lock = NULL;
-}
+  }
 
 
 /** Tries to acquires LOCK and returns true if successful or false
@@ -275,14 +253,13 @@ lock_release (struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   struct thread *current = thread_current ();
-  
-  /* Remove donors waiting on this lock */
-  remove_donors_for_lock (current, lock);
-  
-  /* Recalculate priority */
-  thread_update_priority (current);
-  
-  /* Release the lock */
+
+  /* Remove current thread from the list of donation threads */
+  remove_donors_for_lock(current, lock);
+
+  /* Update the thread's priority after removing the donor */
+  thread_update_priority(current);
+
   lock->holder = NULL;
   sema_up (&lock->semaphore);
 }

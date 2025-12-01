@@ -341,11 +341,9 @@ thread_set_priority (int new_priority)
 {
   struct thread *current = thread_current ();
 
-  current->original_priority = new_priority;
+  thread_current ()->priority = new_priority;
 
   thread_update_priority(current);
-
-  thread_yield();
 }
 
 /** Returns the current thread's priority. */
@@ -619,26 +617,22 @@ void thread_donate_priority(struct thread *t, int new_priority) {
 void thread_update_priority(struct thread *t) {
 
   ASSERT (t != NULL);
-  
-  /* Start with base priority */
+
   int max_priority = t->original_priority;
-  
-  /* Find highest priority among donors */
-  if (!list_empty (&t->donations))
-    {
+
+  /* Check all donations in thread list */
+  if (!list_empty (&t->donations)) {
       struct list_elem *e;
       for (e = list_begin (&t->donations); e != list_end (&t->donations);
            e = list_next (e))
         {
           struct thread *donor = list_entry (e, struct thread, donation_elem);
           if (donor->priority > max_priority)
-            {
-              max_priority = donor->priority;
-            }
+            max_priority = donor->priority;
         }
     }
-  
-  /* Update effective priority */
+
+  /* sets the threads priority to the maximum found priority from donations*/
   t->priority = max_priority;
 }
 
