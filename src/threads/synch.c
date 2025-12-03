@@ -46,11 +46,26 @@ cond_sema_priority_compare(const struct list_elem *a, const struct list_elem *b,
   const struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
   const struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
 
-  /* Compare by priority stored in waiter's semaphore */
-  return list_entry(list_front(&sa->semaphore.waiters),
-                    struct thread, elem)->priority >
-         list_entry(list_front(&sb->semaphore.waiters),
-                    struct thread, elem)->priority;
+  /* Handle empty waiter lists */
+  bool a_empty = list_empty (&sa->semaphore.waiters);
+  bool b_empty = list_empty (&sb->semaphore.waiters);
+  
+  /* Checks which one is empty to determine which one goes first*/
+  if (a_empty && b_empty)
+    return false;
+  if (a_empty)
+    return false;
+  if (b_empty)
+    return true;
+  
+  /* Both have waiters - compare highest priority threads */
+  list_sort (&sa->semaphore.waiters, thread_priority_compare, NULL);
+  list_sort (&sb->semaphore.waiters, thread_priority_compare, NULL);
+  
+  struct thread *ta = list_entry (list_front (&sa->semaphore.waiters), struct thread, elem);
+  struct thread *tb = list_entry (list_front (&sb->semaphore.waiters), struct thread, elem);
+  
+  return ta->priority > tb->priority;
 }
 
 
@@ -331,42 +346,6 @@ lock_held_by_current_thread (const struct lock *lock)
   return lock->holder == thread_current ();
 }
 
-/** One semaphore in a list. */
-struct semaphore_elem 
-  {
-    struct list_elem elem;              /**< List element. */
-    struct semaphore semaphore;         /**< This semaphore. */
-  };
-
-/* Comparator for condition-variable waiters */
-static bool
-cond_sema_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
-{
-  const struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
-  const struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
-
-  /* Handle empty waiter lists */
-  bool a_empty = list_empty (&sa->semaphore.waiters);
-  bool b_empty = list_empty (&sb->semaphore.waiters);
-  
-  /* Checks which one is empty to determine which one goes first*/
-  if (a_empty && b_empty)
-    return false;
-  if (a_empty)
-    return false;
-  if (b_empty)
-    return true;
-  
-  /* Both have waiters - compare highest priority threads */
-  list_sort (&sa->semaphore.waiters, thread_priority_compare, NULL);
-  list_sort (&sb->semaphore.waiters, thread_priority_compare, NULL);
-  
-  struct thread *ta = list_entry (list_front (&sa->semaphore.waiters), struct thread, elem);
-  struct thread *tb = list_entry (list_front (&sb->semaphore.waiters), struct thread, elem);
-  
-  return ta->priority > tb->priority;
-}
-
 
 /** Initializes condition variable COND.  A condition variable
    allows one piece of code to signal a condition and cooperating
