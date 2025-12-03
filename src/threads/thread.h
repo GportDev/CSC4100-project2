@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include "threads/synch.h"
 
+struct lock;
+
 /** States in a thread's life cycle. */
 enum thread_status
   {
@@ -94,6 +96,12 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /**< List element. */
 
+    /* Priority donation fields - Added for Phase 2B*/
+    int original_priority;              /**< Original priority before donation. */
+    struct list donations;              /**< List of threads that donated priority. */
+    struct list_elem donation_elem;    /**< List element for donation list. */
+    struct lock *waiting_lock;          /**< Lock the thread is waiting on. */
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /**< Page directory. */
@@ -141,5 +149,13 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+/* Priority donation functions */
+void thread_donate_priority (struct thread *t, int new_priority);
+void thread_update_priority (struct thread *t);
+void remove_donors_for_lock (struct thread *t, struct lock *lock);
+bool thread_priority_compare (const struct list_elem *a,
+                              const struct list_elem *b,
+                              void *aux);
 
 #endif /**< threads/thread.h */
