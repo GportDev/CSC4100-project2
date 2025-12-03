@@ -32,6 +32,26 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+/** One semaphore in a list. */
+struct semaphore_elem 
+  {
+    struct list_elem elem;              /**< List element. */
+    struct semaphore semaphore;         /**< This semaphore. */
+  };
+
+/* Comparator for condition-variable waiters */
+static bool
+cond_sema_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  const struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
+  const struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
+
+  /* Compare by priority stored in waiter's semaphore */
+  return list_entry(list_front(&sa->semaphore.waiters),
+                    struct thread, elem)->priority >
+         list_entry(list_front(&sb->semaphore.waiters),
+                    struct thread, elem)->priority;
+}
 
 
 /** Initializes semaphore SEMA to VALUE.  A semaphore is a
@@ -129,12 +149,14 @@ sema_up (struct semaphore *sema)
     thread_unblock(t);
   }
 
-/* restore interrupts */
-    intr_set_level(old_level);
+  /* restore interrupts */
+  intr_set_level(old_level);
 
-/* if the thread we woke has higher priority than current, yield the CPU. */
- if(!intr_context())
-   thread_yield();
+  /* If not in interrupt context, yield to allow the woken thread to run
+     if it has higher priority. thread_yield() will return immediately
+     if current thread is still highest priority. */
+  if (!intr_context())
+    thread_yield();
  
 }
 
