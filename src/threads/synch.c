@@ -32,6 +32,13 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+/** One semaphore in a list. */
+struct semaphore_elem 
+  {
+    struct list_elem elem;              /**< List element. */
+    struct semaphore semaphore;         /**< This semaphore. */
+  };
+
 /* Comparator for condition-variable waiters */
 static bool
 cond_sema_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
@@ -83,7 +90,7 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_push_back (&sema->waiters, &thread_current ()->elem, thread_priority_compare, NULL);
+      list_insert_ordered (&sema->waiters, &thread_current ()->elem, thread_priority_compare, NULL);
       thread_block ();
     }
   sema->value--;
@@ -127,7 +134,7 @@ sema_up (struct semaphore *sema)
 
   ASSERT (sema != NULL);
 
-  old_level = intry_disable();
+  old_level = intr_disable();
 
   /* icrement value first */
   sema->value++;
@@ -142,12 +149,14 @@ sema_up (struct semaphore *sema)
     thread_unblock(t);
   }
 
-/* restore interrupts */
-    intr_set_level(old_level);
+  /* restore interrupts */
+  intr_set_level(old_level);
 
-/* if the thread we woke has higher priority than current, yield the CPU. */
- if(!intr_context())
-   thread_yield();
+  /* If not in interrupt context, yield to allow the woken thread to run
+     if it has higher priority. thread_yield() will return immediately
+     if current thread is still highest priority. */
+  if (!intr_context())
+    thread_yield();
  
 }
 
@@ -322,13 +331,6 @@ lock_held_by_current_thread (const struct lock *lock)
   return lock->holder == thread_current ();
 }
 
-/** One semaphore in a list. */
-struct semaphore_elem 
-  {
-    struct list_elem elem;              /**< List element. */
-    struct semaphore semaphore;         /**< This semaphore. */
-  };
-
 /** Initializes condition variable COND.  A condition variable
    allows one piece of code to signal a condition and cooperating
    code to receive the signal and act upon it. */

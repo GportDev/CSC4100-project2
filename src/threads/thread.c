@@ -243,6 +243,10 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
+  /* If the new thread has higher priority than current, yield CPU. */
+  if (t->priority > thread_current ()->priority)
+    thread_yield ();
+
   return tid;
 }
 
@@ -387,6 +391,10 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
+    /* In MLFQS mode, priority is computed automatically - ignore manual setting */
+    if (thread_mlfqs)
+      return;
+
     struct thread *current = thread_current ();
     current->original_priority = new_priority;
 
