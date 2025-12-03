@@ -88,7 +88,11 @@ struct thread
     enum thread_status status;          /**< Thread state. */
     char name[16];                      /**< Name (for debugging purposes). */
     uint8_t *stack;                     /**< Saved stack pointer. */
+
+    /* Priority (effective). For MLFQS this value is computed from
+       recent_cpu and nice; for the basic project it is set directly. */
     int priority;                       /**< Priority. */
+
     struct list_elem allelem;           /**< List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
@@ -125,9 +129,6 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
-void thread_update_load_avg (void);
-void thread_update_recent_cpu_all (void);
-void thread_recalculate_priority_all (void);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);
@@ -140,12 +141,14 @@ void thread_yield (void);
 typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
 
+/* Basic priority API (Phase 1) */
 int thread_get_priority (void);
 void thread_set_priority (int);
 
+/* MLFQS (Phase 3 / Bonus) API */
 int thread_get_nice (void);
 void thread_set_nice (int);
-int thread_get_recent_cpu (void);
-int thread_get_load_avg (void);
+int thread_get_recent_cpu (void); /* returns 100 * recent_cpu (see spec) */
+int thread_get_load_avg (void);   /* returns 100 * load_avg (see spec) */
 
 #endif /**< threads/thread.h */
