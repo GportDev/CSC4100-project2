@@ -102,6 +102,9 @@ struct thread
     /* Alarm clock fields - Added for Phase 1 */
     int64_t wakeup_tick;                /**< Tick when thread should wake up. */
 
+    int nice;                           /**< Niceness value (MLFQS). */
+    int recent_cpu;                     /**< Recent CPU usage (fixed-point). */
+
     /* Owned by thread.c. */
     unsigned magic;                     /**< Detects stack overflow. */
   };
