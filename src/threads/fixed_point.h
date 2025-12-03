@@ -1,18 +1,52 @@
---- /dev/null
-+++ src/threads/fixed_point.h
-@@ -0,0 +1,53 @@
-#ifndef FIXED_POINT_H
-#define FIXED_POINT_H
-#define F (1 << 14)
-#define INT_TO_FP(n) ((n) * F)
-#define FP_TO_INT_ZERO(x) ((x) / F)
-#define FP_TO_INT_NEAREST(x) ((x) >= 0 ? ((x) + F/2) / F : ((x) - F/2) / F)
-#define FP_ADD(x,y) ((x) + (y))
-#define FP_SUB(x,y) ((x) - (y))
-#define FP_ADD_INT(x,n) ((x) + (n) * F)
-#define FP_SUB_INT(x,n) ((x) - (n) * F)
-#define FP_MUL(x,y) ((int64_t)(x)) * (y) / F
-#define FP_MUL_INT(x,n) ((x) * (n))
-#define FP_DIV(x,y) (((int64_t)(x)) * F / (y))
-#define FP_DIV_INT(x,n) ((x) / (n))
+#ifndef THREADS_FIXED_POINT_H
+#define THREADS_FIXED_POINT_H
+#include <stdint.h>
+#define FP_F (1 << 14)
+static inline int
+fp_int_to_fp (int n){
+  return n * FP_F;
+}
+static inline int
+fp_to_int_zero (int x){
+  return x / FP_F;
+}
+static inline int
+fp_to_int_nearest (int x){
+  if (x >= 0)
+    return (x + FP_F / 2) / FP_F;
+  else
+    return (x - FP_F / 2) / FP_F;
+}
+static inline int
+fp_add (int x, int y){
+  return x + y;
+}
+static inline int
+fp_sub (int x, int y){
+  return x - y;
+}
+static inline int
+fp_add_int (int x, int n){
+  return x + n * FP_F;
+}
+static inline int
+fp_sub_int (int x, int n){
+  return x - n * FP_F;
+}
+static inline int
+fp_mul (int x, int y){
+  return (int) (((int64_t) x) * y / FP_F);
+}
+static inline int
+fp_div (int x, int y){
+  return (int) (((int64_t) x) * FP_F / y);
+}
+static inline int
+fp_mul_int (int x, int n){
+  return x * n;
+}
+static inline int
+fp_div_int (int x, int n){
+  return x / n;
+}
 #endif
