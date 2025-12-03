@@ -323,12 +323,24 @@ cond_sema_priority_compare(const struct list_elem *a, const struct list_elem *b,
   const struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
   const struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
 
-  /* Get the highest priority thread waiting on each semaphore */
-  struct list_elem *wa = list_front (&sa->semaphore.waiters);
-  struct list_elem *wb = list_front (&sb->semaphore.waiters);
+  /* Handle empty waiter lists */
+  bool a_empty = list_empty (&sa->semaphore.waiters);
+  bool b_empty = list_empty (&sb->semaphore.waiters);
   
-  struct thread *ta = list_entry (wa, struct thread, elem);
-  struct thread *tb = list_entry (wb, struct thread, elem);
+  /* Checks which one is empty to determine which one goes first*/
+  if (a_empty && b_empty)
+    return false;
+  if (a_empty)
+    return false;
+  if (b_empty)
+    return true;
+  
+  /* Both have waiters - compare highest priority threads */
+  list_sort (&sa->semaphore.waiters, thread_priority_compare, NULL);
+  list_sort (&sb->semaphore.waiters, thread_priority_compare, NULL);
+  
+  struct thread *ta = list_entry (list_front (&sa->semaphore.waiters), struct thread, elem);
+  struct thread *tb = list_entry (list_front (&sb->semaphore.waiters), struct thread, elem);
   
   return ta->priority > tb->priority;
 }
