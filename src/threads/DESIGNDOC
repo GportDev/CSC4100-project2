@@ -9,7 +9,7 @@
 >> Fill in the names and email addresses of your group members.
 
 FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
+Brence Moore <bbmoore42@tntech.edu>
 FirstName LastName <email@domain.example>
 
 ---- PRELIMINARIES ----
@@ -17,9 +17,14 @@ FirstName LastName <email@domain.example>
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
+This was ran in a VM according to the instructions in the assignment's
+VM installation section.
+
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
+
+[Week02] Pintos Project1-1 Thread <https://youtu.be/myO2bs5LMak?si=Ew6VUqkdeJ5UwwBK>
 
 			     ALARM CLOCK
 			     ===========
@@ -59,6 +64,24 @@ FirstName LastName <email@domain.example>
 >> B1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+
+struct thread
+  {
+    int original_priority;             /* Original priority before donation. */
+    struct list donations;             /* List of threads that donated priority. */
+    struct list_elem donation_elem;    /* List element for donation list. */
+    struct lock *waiting_lock;         /* Lock the thread is waiting on. */
+  };
+
+struct list waiters
+  {
+    struct list waiters;   /* List of waiting threads. */
+  }
+
+bool thread_priority_compare(...);  /* Comparator: return true if A has higher priority than B */
+void thread_donate_priority(...)  /* Helper function to donate priority for a thread */
+void thread_update_priority(...)  /* Added function to update priority after a donation */
+void remove_donors_for_lock(...)  /* remove donrs for a specific lock */
 
 >> B2: Explain the data structure used to track priority donation.
 >> Use ASCII art to diagram a nested donation.  (Alternately, submit a
