@@ -32,19 +32,6 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
-/* Comparator for condition-variable waiters */
-static bool
-cond_sema_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
-{
-  const struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
-  const struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
-
-  /* Compare by priority stored in waiter’s semaphore */
-  return list_entry(list_front(&sa->semaphore.waiters),
-                    struct thread, elem)->priority >
-         list_entry(list_front(&sb->semaphore.waiters),
-                    struct thread, elem)->priority;
-}
 
 
 /** Initializes semaphore SEMA to VALUE.  A semaphore is a
@@ -83,7 +70,7 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_push_back (&sema->waiters, &thread_current ()->elem, thread_priority_compare, NULL);
+      list_insert_ordered (&sema->waiters, &thread_current ()->elem, thread_priority_compare, NULL);
       thread_block ();
     }
   sema->value--;
@@ -127,7 +114,7 @@ sema_up (struct semaphore *sema)
 
   ASSERT (sema != NULL);
 
-  old_level = intry_disable();
+  old_level = intr_disable();
 
   /* icrement value first */
   sema->value++;
@@ -328,6 +315,24 @@ struct semaphore_elem
     struct list_elem elem;              /**< List element. */
     struct semaphore semaphore;         /**< This semaphore. */
   };
+
+/* Comparator for condition-variable waiters */
+static bool
+cond_sema_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  const struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
+  const struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
+
+  /* Get the highest priority thread waiting on each semaphore */
+  struct list_elem *wa = list_front (&sa->semaphore.waiters);
+  struct list_elem *wb = list_front (&sb->semaphore.waiters);
+  
+  struct thread *ta = list_entry (wa, struct thread, elem);
+  struct thread *tb = list_entry (wb, struct thread, elem);
+  
+  return ta->priority > tb->priority;
+}
+
 
 /** Initializes condition variable COND.  A condition variable
    allows one piece of code to signal a condition and cooperating
