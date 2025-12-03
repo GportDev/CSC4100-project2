@@ -38,11 +38,12 @@ static const struct test tests[] =
     {"mlfqs-nice-2", test_mlfqs_nice_2},
     {"mlfqs-nice-10", test_mlfqs_nice_10},
     {"mlfqs-block", test_mlfqs_block},
+    {"pa0", pa0}
   };
 
 static const char *test_name;
 
-/** Runs the test named NAME. */
+/* Runs the test named NAME. */
 void
 run_test (const char *name) 
 {
@@ -60,7 +61,7 @@ run_test (const char *name)
   PANIC ("no test named \"%s\"", name);
 }
 
-/** Prints FORMAT as if with printf(),
+/* Prints FORMAT as if with printf(),
    prefixing the output by the name of the test
    and following it with a new-line character. */
 void
@@ -75,7 +76,7 @@ msg (const char *format, ...)
   putchar ('\n');
 }
 
-/** Prints failure message FORMAT as if with printf(),
+/* Prints failure message FORMAT as if with printf(),
    prefixing the output by the name of the test and FAIL:
    and following it with a new-line character,
    and then panics the kernel. */
@@ -93,7 +94,7 @@ fail (const char *format, ...)
   PANIC ("test failed");
 }
 
-/** Prints a message indicating the current test passed. */
+/* Prints a message indicating the current test passed. */
 void
 pass (void) 
 {
