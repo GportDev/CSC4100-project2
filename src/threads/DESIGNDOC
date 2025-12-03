@@ -8,9 +8,10 @@
 
 >> Fill in the names and email addresses of your group members.
 
-FirstName LastName <email@domain.example>
 Brence Moore <bbmoore42@tntech.edu>
-FirstName LastName <email@domain.example>
+Gabriel Porteiro <gdporteiro42@tntech.edu>
+Nicholas Luebstorf <nwluebstor42@tntech.edu>
+James Eldridge <jmeldridge43@tntech.edu>
 
 ---- PRELIMINARIES ----
 
@@ -35,26 +36,70 @@ VM installation section.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+In struct thread (thread.h):
+  int64_t wakeup_tick;                /* Tick when thread should wake up. */
+
+In timer.c:
+  static struct list sleeping_list;   /* List of sleeping threads, sorted by wakeup_tick. */
+  static int64_t next_wakeup_tick;    /* Earliest wakeup time. Used to skip unnecessary checks. */
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
 
+timer_sleep():
+1. Calculate wakeup_tick = current_tick + ticks_to_sleep
+2. Disable interrupts
+3. Insert thread into sleeping_list (sorted by wakeup_tick)
+4. Update next_wakeup_tick if needed
+5. Block thread with thread_block()
+6. Re-enable interrupts when woken up
+
+Timer interrupt handler:
+- If current tick >= next_wakeup_tick, call check_sleeping_threads()
+- check_sleeping_threads() iterates sleeping_list and wakes threads whose wakeup_tick has passed
+- Updates next_wakeup_tick to next earliest wakeup time
+
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
+
+1. Sorted list allows early exit - stop checking when first thread isn't ready
+2. next_wakeup_tick optimization - only scan list when ticks >= next_wakeup_tick
+3. List insertion happens in timer_sleep(), not in interrupt handler
 
 ---- SYNCHRONIZATION ----
 
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
+timer_sleep() disables interrupts before modifying sleeping_list and next_wakeup_tick. This prevents
+other threads from preempting during the critical section (list insertion and thread_block()).
+Interrupts remain disabled until the context switch completes.
+
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
+
+Interrupts are disabled during the entire critical section of timer_sleep() (from list insertion
+through thread_block()). This prevents timer interrupts from calling check_sleeping_threads() while
+sleeping_list is being modified.
 
 ---- RATIONALE ----
 
 >> A6: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+Sorted list with next_wakeup_tick optimization:
+
+Advantages:
+- Sorted list allows early exit when checking for threads to wake (often O(1) instead of O(n))
+- next_wakeup_tick lets handler skip list entirely when no threads are ready
+- Blocks threads instead of busy-waiting, freeing CPU for other work
+- Uses existing Pintos list primitives for simplicity
+
+Alternative considered: Unsorted list would require checking all sleeping threads every tick.
+Alternative considered: Priority queue/heap adds complexity without significant benefit for typical
+small numbers of sleeping threads.
 
 			 PRIORITY SCHEDULING
 			 ===================
