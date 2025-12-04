@@ -268,6 +268,16 @@ and/or too complex for the same results.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+struct thread
+ {
+	int nice;			/* Niceness value (MLFQS) */
+	int recent_cpu;		/* Recent CPU usage (fixed-point) */
+ }
+
+static int load_avg;	/* fixed-point */
+
+#define FP_F (1 << 14)	/* Fixed-point factor (2^14) */
+
 ---- ALGORITHMS ----
 
 >> C2: Suppose threads A, B, and C have nice values 0, 1, and 2.  Each
@@ -278,23 +288,36 @@ and/or too complex for the same results.
 timer  recent_cpu    priority   thread
 ticks   A   B   C   A   B   C   to run
 -----  --  --  --  --  --  --   ------
- 0
- 4
- 8
-12
-16
-20
-24
-28
-32
-36
+ 0		0   0	0  63  61  59		A
+ 4		4	0	0  62  61  59		A
+ 8		8	0	0  61  61  59		B
+12		8	4	0  61  60  59		A
+16	   12	4	0  60  60  59		B
+20	   12	8	0  60  59  59		A
+24	   16	8	0  59  59  59		C
+28	   16	8	4  59  59  58		B
+32	   16  12	4  59  58  58		A
+36	   20  12	4  58  58  58		C
 
 >> C3: Did any ambiguities in the scheduler specification make values
 >> in the table uncertain?  If so, what rule did you use to resolve
 >> them?  Does this match the behavior of your scheduler?
 
+Several ambiguities made some table values uncertain. For tie-breaking between
+equal-priority threads, we assumed round-robin FIFO order, which matches our
+scheduler’s ready-list behavior. For recalculuation timing, we assumed priorities
+are recomputed every 4 ticks before choosing the next thread, and our scheduler
+does the same. We also assumed recent_cpu incrememtns every tick for the running
+thread, separate from the 4-tick recalculation cycle, which aligns with our
+implementation. Finally, we assumed load_avg starts at 0, matching how our
+scheduler initializes it.
+
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
+
+Most scheduling work happens in the timer interrupt, while switching occurs outside it.
+This keeps scheduling consistent but makes the interrupt handler linear, increasing
+latency as thread count grows. For typical workloads the impact is small.
 
 ---- RATIONALE ----
 
@@ -303,12 +326,26 @@ ticks   A   B   C   A   B   C   to run
 >> time to work on this part of the project, how might you choose to
 >> refine or improve your design?
 
+Our design is simple, consistent, and closely follows the BSD scheduler,
+using fast fixed-point arithmetic and centralized updates. However, it
+relies on linear work in the interrupt handler, has limited fixed-point
+precision, and updates some values unnecessarily. With more time, we’d
+optimize priority and recent_cpu updates, use more efficient ready queues,
+and improve the fixed-point implementation for better scalability.
+
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
 >> decide to implement it the way you did?  If you created an
 >> abstraction layer for fixed-point math, that is, an abstract data
 >> type and/or a set of functions or macros to manipulate fixed-point
 >> numbers, why did you do so?  If not, why not?
+
+We implemented fixed-point math using a small abstraction layer to keep the
+code readable, consistant, and easy to maintain. This lets us express operiations
+like addition, mmultiplication, and scaling clearly while avoiding repeated low-level
+shifting logic. It also centralizes the fixed-point format, so changing precision
+only requires updating one file. Using macros keeps the operations inline with zero
+overhead, making the implementation both clean and efficient.
 
 			   SURVEY QUESTIONS
 			   ================
@@ -322,14 +359,29 @@ the quarter.
 >> In your opinion, was this assignment, or any one of the three problems
 >> in it, too easy or too hard?  Did it take too long or too little time?
 
+This assignment was more difficult than we thought it was going to be and took longer
+than expected because of roadblocks and evaluating how to obtain the solutions to the
+problems.
+
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
+
+Yes, we feel like we have a better understanding of how to manage priorities, donations,
+and synchronizing multiple programs in an OS.
 
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
 >> find any of our guidance to be misleading?
 
+We think it would help if we got to see what the concepts we talk about in class
+look like in practice and in actual code, as we understand the concepts, but converting
+that into code can be difficult.
+
 >> Do you have any suggestions for the TAs to more effectively assist
 >> students, either for future quarters or the remaining projects?
 
+No.
+
 >> Any other comments?
+
+No.
