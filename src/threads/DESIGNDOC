@@ -8,18 +8,24 @@
 
 >> Fill in the names and email addresses of your group members.
 
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
+Brence Moore <bbmoore42@tntech.edu>
+Gabriel Porteiro <gdporteiro42@tntech.edu>
+Nicholas Luebstorf <nwluebstor42@tntech.edu>
+James Eldridge <jmeldridge43@tntech.edu>
 
 ---- PRELIMINARIES ----
 
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
+This was ran in a VM according to the instructions in the assignment's
+VM installation section.
+
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
+
+[Week02] Pintos Project1-1 Thread <https://youtu.be/myO2bs5LMak?si=Ew6VUqkdeJ5UwwBK>
 
 			     ALARM CLOCK
 			     ===========
@@ -30,26 +36,70 @@ FirstName LastName <email@domain.example>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+In struct thread (thread.h):
+  int64_t wakeup_tick;                /* Tick when thread should wake up. */
+
+In timer.c:
+  static struct list sleeping_list;   /* List of sleeping threads, sorted by wakeup_tick. */
+  static int64_t next_wakeup_tick;    /* Earliest wakeup time. Used to skip unnecessary checks. */
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
 
+timer_sleep():
+1. Calculate wakeup_tick = current_tick + ticks_to_sleep
+2. Disable interrupts
+3. Insert thread into sleeping_list (sorted by wakeup_tick)
+4. Update next_wakeup_tick if needed
+5. Block thread with thread_block()
+6. Re-enable interrupts when woken up
+
+Timer interrupt handler:
+- If current tick >= next_wakeup_tick, call check_sleeping_threads()
+- check_sleeping_threads() iterates sleeping_list and wakes threads whose wakeup_tick has passed
+- Updates next_wakeup_tick to next earliest wakeup time
+
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
+
+1. Sorted list allows early exit - stop checking when first thread isn't ready
+2. next_wakeup_tick optimization - only scan list when ticks >= next_wakeup_tick
+3. List insertion happens in timer_sleep(), not in interrupt handler
 
 ---- SYNCHRONIZATION ----
 
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
+timer_sleep() disables interrupts before modifying sleeping_list and next_wakeup_tick. This prevents
+other threads from preempting during the critical section (list insertion and thread_block()).
+Interrupts remain disabled until the context switch completes.
+
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
+
+Interrupts are disabled during the entire critical section of timer_sleep() (from list insertion
+through thread_block()). This prevents timer interrupts from calling check_sleeping_threads() while
+sleeping_list is being modified.
 
 ---- RATIONALE ----
 
 >> A6: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+Sorted list with next_wakeup_tick optimization:
+
+Advantages:
+- Sorted list allows early exit when checking for threads to wake (often O(1) instead of O(n))
+- next_wakeup_tick lets handler skip list entirely when no threads are ready
+- Blocks threads instead of busy-waiting, freeing CPU for other work
+- Uses existing Pintos list primitives for simplicity
+
+Alternative considered: Unsorted list would require checking all sleeping threads every tick.
+Alternative considered: Priority queue/heap adds complexity without significant benefit for typical
+small numbers of sleeping threads.
 
 			 PRIORITY SCHEDULING
 			 ===================
@@ -60,20 +110,107 @@ FirstName LastName <email@domain.example>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+struct thread
+  {
+    int original_priority;             /* Original priority before donation. */
+    struct list donations;             /* List of threads that donated priority. */
+    struct list_elem donation_elem;    /* List element for donation list. */
+    struct lock *waiting_lock;         /* Lock the thread is waiting on. */
+  };
+
+struct list waiters
+  {
+    struct list waiters;   /* List of waiting threads. */
+  }
+
+bool thread_priority_compare(...); /* Comparator: return true if A has higher priority than B */
+void thread_donate_priority(...);  /* Helper function to donate priority for a thread */
+void thread_update_priority(...);  /* Added function to update priority after a donation */
+void remove_donors_for_lock(...);  /* remove donrs for a specific lock */
+
 >> B2: Explain the data structure used to track priority donation.
 >> Use ASCII art to diagram a nested donation.  (Alternately, submit a
 >> .png file.)
+
+Each thread has a base_priority, priority, a list of donations, and a waiting_on pointer.
+The base_priority does not change during donation. Waiting_on points to the lock the thread
+waiting for.
+
+Initial state:
+Thread H (priority 32) wants lock A held by M (priority 31) 
+Thread M (priority 31) wants lock B held by L (priority 30)
+
+Before donation:
+    H(32) -- waiting_on --> [Lock A]
+                              V holder
+                            M(31) -- waiting_on --> [Lock B]
+                                                      V holder
+                                                    L(30)
+
+After nested donation:
+    H(32) -- waiting_on --> [Lock A]
+       V                     V holder
+    donors        -->       M(32) -- waiting_on --> [Lock B]
+                               V                      V  holder
+                             donors         --->     L(32)
+
+Both M and L now have effective priority 32 (donated from H).
+
+Thread structure:
+H: base_priority=32, priority=32, waiting_on=Lock A, donors=[]
+M: base_priority=31, priority=32, waiting_on=Lock B, donors=[H]
+L: base_priority=30, priority=32, waiting_on=NULL, donors=[M(which has H)]
 
 ---- ALGORITHMS ----
 
 >> B3: How do you ensure that the highest priority thread waiting for
 >> a lock, semaphore, or condition variable wakes up first?
 
+In sema_down(), the threads insert themselves into a waiting list using
+list_insert_ordered() with thread_priority_compare(), maintaining priority
+order. In sema_up() before unlbocking a thread, list_sort() is called on the
+waiting list to ensure that priorities are sorted.
+
+cond_wait threads are added to the condition's waiting list and cond_signal()
+sorts the waiting list using cond_sema_priority_compare() before signaling.
+This compares the thread with the highest priority waiting on each semaphore, which
+ensures the thread with the highest priority is made.
+
 >> B4: Describe the sequence of events when a call to lock_acquire()
 >> causes a priority donation.  How is nested donation handled?
 
+1. Thread A tries to acquire lock held by thread B.
+2. Check if lock has a hodler (B) and if A's priority > B's priority.
+3. Set A's waiting_on to the lock
+4. Add A to B's donation list.
+5. Nested donation loop:
+  a. If A's priority > B's priority, directly update B's priority.
+  b. Chekck if B is also waiting on a lock (B's waiting_on != NULL).
+  c. If yes, get that lock's holder (C) and repeat donation to C.
+  d. Continue following the chain until we reach a thread that isn't waiting.
+6. Call sema_down() to block A until lock is available
+7. When A wakes up, set lock holder to A and clear A's waiting_on.
+
 >> B5: Describe the sequence of events when lock_release() is called
 >> on a lock that a higher-priority thread is waiting for.
+
+1. Thread C (currently holding lock) calls lock_release().
+2. Call remove_donors_for_lock(C, lock):
+   - Iterate through C's donors list.
+   - Remove any threads whose waiting_on equals this lock.
+   - These threads donated because they wanted THIS specific lock
+3. Call thread_update_priority(C):
+   - Start with C's base_priority.
+   - Iterate through remaining donors (if any)
+   - Find the maximum priority among all remaining donors
+   - Set C's effective priority to max(base_priority, donor priorities)
+4. Set lock->holder = NULL
+5. Call sema_up(&lock->semaphore):
+   - Sort waiters by priority
+   - Unblock the highest priority thread (A)
+   - A is now ready to run
+6. thread_unblock() for A checks if A's priority > current thread's priority
+7. If yes, thread_yield() is called, and A immediately runs.
 
 ---- SYNCHRONIZATION ----
 
@@ -81,10 +218,46 @@ FirstName LastName <email@domain.example>
 >> how your implementation avoids it.  Can you use a lock to avoid
 >> this race?
 
+Thread A calls thread_set_priority() to lower its priority while Thread B is 
+simultaneously trying to donate priority to Thread A through lock_acquire().
+
+Scenario without proper synchronization:
+Time  Thread A                    Thread B
+1     Read base_priority          
+2     Calculate new priority      Add B to A's donors list
+3                                 Donate priority to A
+4     Write new priority          
+
+At time 4, Thread A overwrites its priority without considering B's donation.
+
+How this implementation avoids it:
+1. Interrupts are disabled during critical sections in both thread_set_priority() 
+   and lock_acquire()
+2. In thread_set_priority():
+   - Disable interrupts
+   - Update base_priority
+   - Call thread_update_priority() which checks ALL donors
+   - Re-enable interrupts
+3. This ensures thread_update_priority() sees all donations when calculating 
+   effective priority
+
+Can you use a lock?
+
+No, locks are not appropriate here because lock_acquire() itself needs to modify
+priority (circular dependency), locks can sleep, but we need atomic updates, interrupt
+handlers might need to access priority (can't sleep in interrupt context), and disabling
+interrupts is the correct mechanism for protecting short critical sections in the kernel.
+
 ---- RATIONALE ----
 
 >> B7: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+We chose a direct priority assignment with donor tracking because it provides a clear and
+efficient way to manage priority donation. This approach is simpler, easier to reason about,
+and avoids repeated recalculation during scheduling. We rejected alternatives like
+reference counting and recomputing priority on every check because they are less efficient
+and/or too complex for the same results.
 
 			  ADVANCED SCHEDULER
 			  ==================
@@ -94,6 +267,16 @@ FirstName LastName <email@domain.example>
 >> C1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+
+struct thread
+ {
+	int nice;			/* Niceness value (MLFQS) */
+	int recent_cpu;		/* Recent CPU usage (fixed-point) */
+ }
+
+static int load_avg;	/* fixed-point */
+
+#define FP_F (1 << 14)	/* Fixed-point factor (2^14) */
 
 ---- ALGORITHMS ----
 
@@ -105,23 +288,36 @@ FirstName LastName <email@domain.example>
 timer  recent_cpu    priority   thread
 ticks   A   B   C   A   B   C   to run
 -----  --  --  --  --  --  --   ------
- 0
- 4
- 8
-12
-16
-20
-24
-28
-32
-36
+ 0		0   0	0  63  61  59		A
+ 4		4	0	0  62  61  59		A
+ 8		8	0	0  61  61  59		B
+12		8	4	0  61  60  59		A
+16	   12	4	0  60  60  59		B
+20	   12	8	0  60  59  59		A
+24	   16	8	0  59  59  59		C
+28	   16	8	4  59  59  58		B
+32	   16  12	4  59  58  58		A
+36	   20  12	4  58  58  58		C
 
 >> C3: Did any ambiguities in the scheduler specification make values
 >> in the table uncertain?  If so, what rule did you use to resolve
 >> them?  Does this match the behavior of your scheduler?
 
+Several ambiguities made some table values uncertain. For tie-breaking between
+equal-priority threads, we assumed round-robin FIFO order, which matches our
+scheduler’s ready-list behavior. For recalculuation timing, we assumed priorities
+are recomputed every 4 ticks before choosing the next thread, and our scheduler
+does the same. We also assumed recent_cpu incrememtns every tick for the running
+thread, separate from the 4-tick recalculation cycle, which aligns with our
+implementation. Finally, we assumed load_avg starts at 0, matching how our
+scheduler initializes it.
+
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
+
+Most scheduling work happens in the timer interrupt, while switching occurs outside it.
+This keeps scheduling consistent but makes the interrupt handler linear, increasing
+latency as thread count grows. For typical workloads the impact is small.
 
 ---- RATIONALE ----
 
@@ -130,12 +326,26 @@ ticks   A   B   C   A   B   C   to run
 >> time to work on this part of the project, how might you choose to
 >> refine or improve your design?
 
+Our design is simple, consistent, and closely follows the BSD scheduler,
+using fast fixed-point arithmetic and centralized updates. However, it
+relies on linear work in the interrupt handler, has limited fixed-point
+precision, and updates some values unnecessarily. With more time, we’d
+optimize priority and recent_cpu updates, use more efficient ready queues,
+and improve the fixed-point implementation for better scalability.
+
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
 >> decide to implement it the way you did?  If you created an
 >> abstraction layer for fixed-point math, that is, an abstract data
 >> type and/or a set of functions or macros to manipulate fixed-point
 >> numbers, why did you do so?  If not, why not?
+
+We implemented fixed-point math using a small abstraction layer to keep the
+code readable, consistant, and easy to maintain. This lets us express operiations
+like addition, mmultiplication, and scaling clearly while avoiding repeated low-level
+shifting logic. It also centralizes the fixed-point format, so changing precision
+only requires updating one file. Using macros keeps the operations inline with zero
+overhead, making the implementation both clean and efficient.
 
 			   SURVEY QUESTIONS
 			   ================
@@ -149,14 +359,29 @@ the quarter.
 >> In your opinion, was this assignment, or any one of the three problems
 >> in it, too easy or too hard?  Did it take too long or too little time?
 
+This assignment was more difficult than we thought it was going to be and took longer
+than expected because of roadblocks and evaluating how to obtain the solutions to the
+problems.
+
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
+
+Yes, we feel like we have a better understanding of how to manage priorities, donations,
+and synchronizing multiple programs in an OS.
 
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
 >> find any of our guidance to be misleading?
 
+We think it would help if we got to see what the concepts we talk about in class
+look like in practice and in actual code, as we understand the concepts, but converting
+that into code can be difficult.
+
 >> Do you have any suggestions for the TAs to more effectively assist
 >> students, either for future quarters or the remaining projects?
 
+No.
+
 >> Any other comments?
+
+No.
