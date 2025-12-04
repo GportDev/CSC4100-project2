@@ -132,7 +132,34 @@ void remove_donors_for_lock(...);  /* remove donrs for a specific lock */
 >> Use ASCII art to diagram a nested donation.  (Alternately, submit a
 >> .png file.)
 
+Each thread has a base_priority, priority, a list of donations, and a waiting_on pointer.
+The base_priority does not change during donation. Waiting_on points to the lock the thread
+waiting for.
 
+Initial state:
+Thread H (priority 32) wants lock A held by M (priority 31) 
+Thread M (priority 31) wants lock B held by L (priority 30)
+
+Before donation:
+    H(32) -- waiting_on --> [Lock A]
+                              V holder
+                            M(31) -- waiting_on --> [Lock B]
+                                                      V holder
+                                                    L(30)
+
+After nested donation:
+    H(32) -- waiting_on --> [Lock A]
+       V                     V holder
+    donors        -->       M(32) -- waiting_on --> [Lock B]
+                               V                      V  holder
+                             donors         --->     L(32)
+
+Both M and L now have effective priority 32 (donated from H).
+
+Thread structure:
+H: base_priority=32, priority=32, waiting_on=Lock A, donors=[]
+M: base_priority=31, priority=32, waiting_on=Lock B, donors=[H]
+L: base_priority=30, priority=32, waiting_on=NULL, donors=[M(which has H)]
 
 ---- ALGORITHMS ----
 
