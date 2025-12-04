@@ -78,14 +78,16 @@ struct list waiters
     struct list waiters;   /* List of waiting threads. */
   }
 
-bool thread_priority_compare(...);  /* Comparator: return true if A has higher priority than B */
-void thread_donate_priority(...)  /* Helper function to donate priority for a thread */
-void thread_update_priority(...)  /* Added function to update priority after a donation */
-void remove_donors_for_lock(...)  /* remove donrs for a specific lock */
+bool thread_priority_compare(...); /* Comparator: return true if A has higher priority than B */
+void thread_donate_priority(...);  /* Helper function to donate priority for a thread */
+void thread_update_priority(...);  /* Added function to update priority after a donation */
+void remove_donors_for_lock(...);  /* remove donrs for a specific lock */
 
 >> B2: Explain the data structure used to track priority donation.
 >> Use ASCII art to diagram a nested donation.  (Alternately, submit a
 >> .png file.)
+
+
 
 ---- ALGORITHMS ----
 
