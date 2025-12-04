@@ -166,11 +166,51 @@ L: base_priority=30, priority=32, waiting_on=NULL, donors=[M(which has H)]
 >> B3: How do you ensure that the highest priority thread waiting for
 >> a lock, semaphore, or condition variable wakes up first?
 
+In sema_down(), the threads insert themselves into a waiting list using
+list_insert_ordered() with thread_priority_compare(), maintaining priority
+order. In sema_up() before unlbocking a thread, list_sort() is called on the
+waiting list to ensure that priorities are sorted.
+
+cond_wait threads are added to the condition's waiting list and cond_signal()
+sorts the waiting list using cond_sema_priority_compare() before signaling.
+This compares the thread with the highest priority waiting on each semaphore, which
+ensures the thread with the highest priority is made.
+
 >> B4: Describe the sequence of events when a call to lock_acquire()
 >> causes a priority donation.  How is nested donation handled?
 
+1. Thread A tries to acquire lock held by thread B.
+2. Check if lock has a hodler (B) and if A's priority > B's priority.
+3. Set A's waiting_on to the lock
+4. Add A to B's donation list.
+5. Nested donation loop:
+  a. If A's priority > B's priority, directly update B's priority.
+  b. Chekck if B is also waiting on a lock (B's waiting_on != NULL).
+  c. If yes, get that lock's holder (C) and repeat donation to C.
+  d. Continue following the chain until we reach a thread that isn't waiting.
+6. Call sema_down() to block A until lock is available
+7. When A wakes up, set lock holder to A and clear A's waiting_on.
+
 >> B5: Describe the sequence of events when lock_release() is called
 >> on a lock that a higher-priority thread is waiting for.
+
+1. Thread C (currently holding lock) calls lock_release().
+2. Call remove_donors_for_lock(C, lock):
+   - Iterate through C's donors list.
+   - Remove any threads whose waiting_on equals this lock.
+   - These threads donated because they wanted THIS specific lock
+3. Call thread_update_priority(C):
+   - Start with C's base_priority.
+   - Iterate through remaining donors (if any)
+   - Find the maximum priority among all remaining donors
+   - Set C's effective priority to max(base_priority, donor priorities)
+4. Set lock->holder = NULL
+5. Call sema_up(&lock->semaphore):
+   - Sort waiters by priority
+   - Unblock the highest priority thread (A)
+   - A is now ready to run
+6. thread_unblock() for A checks if A's priority > current thread's priority
+7. If yes, thread_yield() is called, and A immediately runs.
 
 ---- SYNCHRONIZATION ----
 
@@ -178,10 +218,46 @@ L: base_priority=30, priority=32, waiting_on=NULL, donors=[M(which has H)]
 >> how your implementation avoids it.  Can you use a lock to avoid
 >> this race?
 
+Thread A calls thread_set_priority() to lower its priority while Thread B is 
+simultaneously trying to donate priority to Thread A through lock_acquire().
+
+Scenario without proper synchronization:
+Time  Thread A                    Thread B
+1     Read base_priority          
+2     Calculate new priority      Add B to A's donors list
+3                                 Donate priority to A
+4     Write new priority          
+
+At time 4, Thread A overwrites its priority without considering B's donation.
+
+How this implementation avoids it:
+1. Interrupts are disabled during critical sections in both thread_set_priority() 
+   and lock_acquire()
+2. In thread_set_priority():
+   - Disable interrupts
+   - Update base_priority
+   - Call thread_update_priority() which checks ALL donors
+   - Re-enable interrupts
+3. This ensures thread_update_priority() sees all donations when calculating 
+   effective priority
+
+Can you use a lock?
+
+No, locks are not appropriate here because lock_acquire() itself needs to modify
+priority (circular dependency), locks can sleep, but we need atomic updates, interrupt
+handlers might need to access priority (can't sleep in interrupt context), and disabling
+interrupts is the correct mechanism for protecting short critical sections in the kernel.
+
 ---- RATIONALE ----
 
 >> B7: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+We chose a direct priority assignment with donor tracking because it provides a clear and
+efficient way to manage priority donation. This approach is simpler, easier to reason about,
+and avoids repeated recalculation during scheduling. We rejected alternatives like
+reference counting and recomputing priority on every check because they are less efficient
+and/or too complex for the same results.
 
 			  ADVANCED SCHEDULER
 			  ==================
